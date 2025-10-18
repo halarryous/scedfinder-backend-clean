@@ -31,6 +31,8 @@
     "@types/cors": "^2.8.13",
     "@types/bcryptjs": "^2.4.2",
     "@types/jsonwebtoken": "^9.0.2",
+    "@types/morgan": "^1.9.4",
+    "@types/compression": "^1.7.2",
     "@types/node": "^20.5.0",
     "@types/pg": "^8.10.2",
     "@types/uuid": "^9.0.2",
