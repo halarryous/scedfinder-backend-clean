@@ -1,8 +1,9 @@
-require('dotenv').config();
+import dotenv from 'dotenv';
+dotenv.config();
 
-module.exports = {
+const config = {
   development: {
-    client: 'pg',
+    client: 'pg' as const,
     connection: {
       host: 'localhost',
       port: 5432,
@@ -16,7 +17,7 @@ module.exports = {
   },
 
   production: {
-    client: 'pg',
+    client: 'pg' as const,
     connection: {
       connectionString: process.env.DATABASE_URL,
       ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
@@ -26,3 +27,5 @@ module.exports = {
     }
   }
 };
+
+export default config;
