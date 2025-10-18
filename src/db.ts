@@ -1,8 +1,16 @@
 import knex from 'knex';
-import knexConfig from './knexfile';
 
-const environment = process.env.NODE_ENV || 'development';
-const config = knexConfig[environment as keyof typeof knexConfig];
+const config = {
+  client: 'pg',
+  connection: process.env.DATABASE_URL || {
+    host: 'localhost',
+    port: 5432,
+    user: 'postgres',
+    password: 'password',
+    database: 'scedfinder'
+  },
+  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+};
 
 const db = knex(config);
 
