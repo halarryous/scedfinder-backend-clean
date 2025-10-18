@@ -5,6 +5,7 @@ import morgan from 'morgan';
 import compression from 'compression';
 import rateLimit from 'express-rate-limit';
 import dotenv from 'dotenv';
+import db from './db';
 
 dotenv.config();
 
@@ -35,47 +36,163 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(limiter);
 
 // Health check endpoint
-app.get('/health', (req, res) => {
-  res.status(200).json({ 
-    status: 'OK', 
-    timestamp: new Date().toISOString(),
-    environment: process.env.NODE_ENV,
-    version: '1.0.0'
-  });
+app.get('/health', async (req, res) => {
+  try {
+    // Test database connection
+    await db.raw('SELECT 1');
+    res.status(200).json({ 
+      status: 'OK', 
+      timestamp: new Date().toISOString(),
+      environment: process.env.NODE_ENV,
+      version: '1.0.0',
+      database: 'connected'
+    });
+  } catch (error) {
+    res.status(500).json({ 
+      status: 'ERROR', 
+      timestamp: new Date().toISOString(),
+      environment: process.env.NODE_ENV,
+      version: '1.0.0',
+      database: 'disconnected',
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
 });
 
 // API Routes
-app.get('/api/v1/sced/search', (req, res) => {
-  res.json({
-    success: true,
-    data: [
-      {
-        id: "test-1",
-        course_code: "03001",
-        course_code_description: "Biology",
-        course_subject_area: "Science",
-        cte_indicator: "No"
-      }
-    ],
-    pagination: {
-      page: 1,
-      limit: 20,
-      total: 1,
-      totalPages: 1
+app.get('/api/v1/sced/search', async (req, res) => {
+  try {
+    const { search = '', page = 1, limit = 20 } = req.query;
+    const offset = (Number(page) - 1) * Number(limit);
+    
+    let query = db('sced_course_details').select('*');
+    
+    if (search) {
+      query = query.where('course_code_description', 'ilike', `%${search}%`)
+                   .orWhere('course_description', 'ilike', `%${search}%`)
+                   .orWhere('course_code', 'ilike', `%${search}%`);
     }
-  });
+    
+    const data = await query.limit(Number(limit)).offset(offset);
+    const total = await query.clone().clearSelect().clearOrder().count('* as count').first();
+    
+    res.json({
+      success: true,
+      data,
+      pagination: {
+        page: Number(page),
+        limit: Number(limit),
+        total: Number(total?.count || 0),
+        totalPages: Math.ceil(Number(total?.count || 0) / Number(limit))
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: { message: 'Failed to search SCED courses' }
+    });
+  }
 });
 
-app.get('/api/v1/certifications/search', (req, res) => {
-  res.json({
-    success: true,
-    data: [
-      {
-        certification_area_code: "5010",
-        certification_area_description: "Biology (Grades 5-9)"
-      }
-    ]
-  });
+app.get('/api/v1/certifications/search', async (req, res) => {
+  try {
+    const { search = '' } = req.query;
+    
+    let query = db('course_certification_mappings')
+      .select('certification_area_code', 'certification_area_description')
+      .distinct();
+    
+    if (search) {
+      query = query.where('certification_area_description', 'ilike', `%${search}%`);
+    }
+    
+    const data = await query;
+    
+    res.json({
+      success: true,
+      data
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: { message: 'Failed to search certifications' }
+    });
+  }
+});
+
+// Database setup endpoint (for initial setup)
+app.post('/api/v1/setup', async (req, res) => {
+  try {
+    // Create tables
+    await db.raw(`
+      CREATE TABLE IF NOT EXISTS sced_course_details (
+        course_code VARCHAR(20) PRIMARY KEY,
+        course_code_description VARCHAR(500),
+        course_description TEXT,
+        course_subject_area VARCHAR(200),
+        course_level VARCHAR(50),
+        cte_indicator VARCHAR(10)
+      );
+    `);
+
+    await db.raw(`
+      CREATE TABLE IF NOT EXISTS course_certification_mappings (
+        id SERIAL PRIMARY KEY,
+        course_code VARCHAR(20),
+        certification_area_code VARCHAR(20),
+        certification_area_description VARCHAR(500)
+      );
+    `);
+
+    // Insert sample data (only if tables are empty)
+    const existingCourses = await db('sced_course_details').count('* as count').first();
+    
+    if (Number(existingCourses?.count) === 0) {
+      await db('sced_course_details').insert([
+        {
+          course_code: '03001',
+          course_code_description: 'Biology',
+          course_description: 'This course provides students with a comprehensive study of living organisms and life processes.',
+          course_subject_area: 'Science',
+          course_level: 'High School',
+          cte_indicator: 'No'
+        },
+        {
+          course_code: '20114',
+          course_code_description: 'Introduction to Agriculture',
+          course_description: 'This course introduces students to the world of agriculture and its career opportunities.',
+          course_subject_area: 'Agriculture, Food & Natural Resources',
+          course_level: 'High School',
+          cte_indicator: 'Yes'
+        },
+        {
+          course_code: '21101',
+          course_code_description: 'Automotive Technology I',
+          course_description: 'This course introduces students to automotive systems and basic repair procedures.',
+          course_subject_area: 'Transportation, Distribution & Logistics',
+          course_level: 'High School',
+          cte_indicator: 'Yes'
+        }
+      ]);
+
+      await db('course_certification_mappings').insert([
+        { course_code: '03001', certification_area_code: '5010', certification_area_description: 'Biology (Grades 5-9)' },
+        { course_code: '03001', certification_area_code: '5020', certification_area_description: 'Biology (Grades 7-12)' },
+        { course_code: '20114', certification_area_code: '8010', certification_area_description: 'Agriculture (Grades 5-9)' },
+        { course_code: '21101', certification_area_code: '9010', certification_area_description: 'Technology Education (Grades 5-9)' }
+      ]);
+    }
+
+    res.json({
+      success: true,
+      message: 'Database setup completed successfully'
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: { message: 'Failed to setup database' }
+    });
+  }
 });
 
 // 404 handler
