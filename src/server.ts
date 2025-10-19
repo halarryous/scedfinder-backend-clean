@@ -63,7 +63,7 @@ app.get('/api/v1/sced/search', async (req, res) => {
     const { search = '', page = 1, limit = 20 } = req.query;
     const offset = (Number(page) - 1) * Number(limit);
     
-    let query = db('sced_course_details').select('*');
+    let query = db('sced_course_details').select('course_code', 'course_code_description', 'course_description', 'course_subject_area', 'course_level', 'cte_indicator');
     
     if (search) {
       query = query.where('course_code_description', 'ilike', `%${search}%`)
@@ -76,7 +76,10 @@ app.get('/api/v1/sced/search', async (req, res) => {
     
     res.json({
       success: true,
-      data,
+      data: data.map(course => ({
+        id: course.course_code,
+        ...course
+      })),
       pagination: {
         page: Number(page),
         limit: Number(limit),
@@ -94,21 +97,29 @@ app.get('/api/v1/sced/search', async (req, res) => {
 
 app.get('/api/v1/certifications/search', async (req, res) => {
   try {
-    const { search = '' } = req.query;
+    const { search = '', page = 1, limit = 20 } = req.query;
+    const offset = (Number(page) - 1) * Number(limit);
     
     let query = db('course_certification_mappings')
-      .select('certification_area_code', 'certification_area_description')
+      .select('certification_area_code as code', 'certification_area_description as name')
       .distinct();
     
-    if (search) {
+    if (search && search !== '*') {
       query = query.where('certification_area_description', 'ilike', `%${search}%`);
     }
     
-    const data = await query;
+    const data = await query.limit(Number(limit)).offset(offset);
+    const total = await query.clone().clearSelect().clearOrder().count('* as count').first();
     
     res.json({
       success: true,
-      data
+      data: data.map(item => ({
+        ...item,
+        course_count: '0' // Placeholder
+      })),
+      total: Number(total?.count || 0),
+      page: Number(page),
+      limit: Number(limit)
     });
   } catch (error) {
     res.status(500).json({
