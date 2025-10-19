@@ -5,6 +5,10 @@ import morgan from 'morgan';
 import compression from 'compression';
 import rateLimit from 'express-rate-limit';
 import dotenv from 'dotenv';
+import multer from 'multer';
+import csvParser from 'csv-parser';
+import fs from 'fs';
+import path from 'path';
 import db from './db';
 
 dotenv.config();
@@ -32,6 +36,21 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Apply rate limiting
 app.use(limiter);
+
+// Configure multer for file uploads
+const upload = multer({
+  dest: 'uploads/',
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype === 'text/csv' || file.originalname.endsWith('.csv')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only CSV files are allowed'));
+    }
+  },
+  limits: {
+    fileSize: 50 * 1024 * 1024 // 50MB limit
+  }
+});
 
 // Health check endpoint
 app.get('/health', async (req, res) => {
@@ -208,6 +227,141 @@ app.get('/api/v1/sced/courses/code/:code', async (req, res) => {
     res.status(500).json({
       success: false,
       error: { message: 'Failed to load course details' }
+    });
+  }
+});
+
+// CSV Upload endpoint
+app.post('/api/v1/admin/upload-csv', upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        error: { message: 'No file uploaded' }
+      });
+    }
+
+    const filePath = req.file.path;
+    const uploadType = req.body.type || 'general';
+    let recordsProcessed = 0;
+
+    // Determine file type based on headers or filename
+    const results: any[] = [];
+    
+    // Read CSV file
+    await new Promise((resolve, reject) => {
+      fs.createReadStream(filePath)
+        .pipe(csvParser())
+        .on('data', (data) => {
+          results.push(data);
+        })
+        .on('end', resolve)
+        .on('error', reject);
+    });
+
+    if (results.length === 0) {
+      throw new Error('No data found in CSV file');
+    }
+
+    // Check first row to determine file type
+    const firstRow = results[0];
+    const hasCourseCertMapping = 'Certification Area Code' in firstRow || 'certification_area_code' in firstRow;
+    
+    if (hasCourseCertMapping) {
+      // This is a course-certification mapping file
+      console.log('Processing course-certification mapping file...');
+      
+      for (const row of results) {
+        const courseCode = row['Course Code (Course ID)'] || row['course_code'];
+        const certAreaCode = row['Certification Area Code'] || row['certification_area_code'];
+        const certAreaDesc = row['Certification Area Description'] || row['certification_area_description'];
+        
+        if (courseCode && certAreaCode && certAreaDesc) {
+          await db('course_certification_mappings')
+            .insert({
+              course_code: courseCode,
+              certification_area_code: certAreaCode,
+              certification_area_description: certAreaDesc
+            })
+            .onConflict(['course_code', 'certification_area_code'])
+            .ignore();
+          recordsProcessed++;
+        }
+      }
+    } else {
+      // This is a SCED course details file
+      console.log('Processing SCED course details file...');
+      
+      for (const row of results) {
+        const courseCode = row['Course Code (Course ID)'] || row['course_code'];
+        const courseDesc = row['Course Code Description'] || row['course_code_description'];
+        const fullDesc = row['Course Description'] || row['course_description'];
+        const subjectArea = row['Course Subject Area'] || row['course_subject_area'];
+        const courseLevel = row['Course Level'] || row['course_level'];
+        const cteIndicator = row['CTE Indicator'] || row['CTE_IND'] || row['cte_indicator'];
+        
+        if (courseCode && courseDesc) {
+          await db('sced_course_details')
+            .insert({
+              course_code: courseCode,
+              course_code_description: courseDesc,
+              course_description: fullDesc,
+              course_subject_area: subjectArea,
+              course_level: courseLevel,
+              cte_indicator: cteIndicator
+            })
+            .onConflict('course_code')
+            .ignore();
+          recordsProcessed++;
+        }
+      }
+    }
+
+    // Clean up uploaded file
+    fs.unlinkSync(filePath);
+
+    res.json({
+      success: true,
+      message: `Successfully processed ${recordsProcessed} records`,
+      recordsProcessed
+    });
+
+  } catch (error) {
+    console.error('CSV upload error:', error);
+    
+    // Clean up file if it exists
+    if (req.file && fs.existsSync(req.file.path)) {
+      fs.unlinkSync(req.file.path);
+    }
+    
+    res.status(500).json({
+      success: false,
+      error: { message: error instanceof Error ? error.message : 'Failed to process CSV file' }
+    });
+  }
+});
+
+// Database stats endpoint
+app.get('/api/v1/admin/stats', async (req, res) => {
+  try {
+    const [courseCount, certCount, mappingCount] = await Promise.all([
+      db('sced_course_details').count('* as count').first(),
+      db('course_certification_mappings').select('certification_area_description').distinct().count('* as count').first(),
+      db('course_certification_mappings').count('* as count').first()
+    ]);
+
+    res.json({
+      success: true,
+      data: {
+        totalCourses: Number(courseCount?.count || 0),
+        totalCertifications: Number(certCount?.count || 0),
+        totalMappings: Number(mappingCount?.count || 0)
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: { message: 'Failed to load database stats' }
     });
   }
 });
