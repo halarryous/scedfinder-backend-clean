@@ -344,27 +344,34 @@ app.post('/api/v1/admin/upload-csv', upload.single('file'), async (req, res) => 
 // Database stats endpoint
 app.get('/api/v1/admin/stats', async (req, res) => {
   try {
-    const courseCount = await db('sced_course_details').count('* as count').first();
-    const mappingCount = await db('course_certification_mappings').count('* as count').first();
+    // Get course count
+    const courseResult = await db('sced_course_details').count('* as count').first();
+    const totalCourses = Number(courseResult?.count || 0);
     
-    // Get distinct certifications count
-    const certCount = await db('course_certification_mappings')
-      .countDistinct('certification_area_description as count')
-      .first();
+    // Get mapping count
+    const mappingResult = await db('course_certification_mappings').count('* as count').first();
+    const totalMappings = Number(mappingResult?.count || 0);
+    
+    // Get distinct certifications count using raw query
+    const certResult = await db.raw(`
+      SELECT COUNT(DISTINCT certification_area_description) as count 
+      FROM course_certification_mappings
+    `);
+    const totalCertifications = Number(certResult.rows?.[0]?.count || 0);
 
     res.json({
       success: true,
       data: {
-        totalCourses: Number(courseCount?.count || 0),
-        totalCertifications: Number(certCount?.count || 0),
-        totalMappings: Number(mappingCount?.count || 0)
+        totalCourses,
+        totalCertifications,
+        totalMappings
       }
     });
   } catch (error) {
     console.error('Stats endpoint error:', error);
     res.status(500).json({
       success: false,
-      error: { message: 'Failed to load database stats' }
+      error: { message: `Failed to load database stats: ${error.message}` }
     });
   }
 });
