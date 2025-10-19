@@ -135,12 +135,12 @@ app.get('/api/v1/certifications/search', async (req, res) => {
       query = query.where('course_certification_mappings.certification_area_description', 'ilike', `%${search}%`);
     }
     
-    // Get total count first
-    const totalResult = await query.clone().clearSelect().count('* as count').first();
-    const total = Number(totalResult?.count || 0);
+    // Get all data first (for distinct count), then paginate manually
+    const allData = await query;
+    const total = allData.length;
     
-    // Apply pagination to the query directly
-    const paginatedData = await query.limit(Number(limit)).offset(offset);
+    // Apply pagination manually
+    const paginatedData = allData.slice(offset, offset + Number(limit));
     
     // Calculate CTE course count for each certification
     const dataWithCounts = await Promise.all(paginatedData.map(async (item) => {
