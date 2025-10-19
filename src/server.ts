@@ -312,18 +312,26 @@ app.post('/api/v1/admin/upload-csv', upload.single('file'), async (req, res) => 
         const cteIndicator = row['CTE Indicator'] || row['CTE_IND'] || row['cte_indicator'];
         
         if (courseCode && courseDesc) {
-          await db('sced_course_details')
-            .insert({
-              course_code: courseCode,
-              course_code_description: courseDesc,
-              course_description: fullDesc,
-              course_subject_area: subjectArea,
-              course_level: courseLevel,
-              cte_indicator: cteIndicator
-            })
-            .onConflict('course_code')
-            .ignore();
-          recordsProcessed++;
+          try {
+            // Check if course already exists
+            const existing = await db('sced_course_details')
+              .where('course_code', courseCode)
+              .first();
+            
+            if (!existing) {
+              await db('sced_course_details').insert({
+                course_code: courseCode,
+                course_code_description: courseDesc,
+                course_description: fullDesc,
+                course_subject_area: subjectArea,
+                course_level: courseLevel,
+                cte_indicator: cteIndicator
+              });
+              recordsProcessed++;
+            }
+          } catch (insertError) {
+            console.warn('Insert error for course:', insertError.message);
+          }
         }
       }
     }
