@@ -123,43 +123,39 @@ app.get('/api/v1/certifications/search', async (req, res) => {
     const { search = '', page = 1, limit = 20 } = req.query;
     const offset = (Number(page) - 1) * Number(limit);
     
-    // Get certifications that have CTE courses only
-    let query = db('course_certification_mappings')
+    // First, get all unique CTE certifications with their course counts
+    const certificationQuery = db('course_certification_mappings')
       .join('sced_course_details', 'course_certification_mappings.course_code', 'sced_course_details.course_code')
-      .select('course_certification_mappings.certification_area_code as code', 'course_certification_mappings.certification_area_description as name')
+      .select(
+        'course_certification_mappings.certification_area_code as code',
+        'course_certification_mappings.certification_area_description as name'
+      )
+      .count('* as course_count')
       .where('sced_course_details.cte_indicator', 'Yes')
-      .distinct()
-      .orderBy('course_certification_mappings.certification_area_description', 'asc'); // Alphabetical order
+      .groupBy('course_certification_mappings.certification_area_code', 'course_certification_mappings.certification_area_description')
+      .orderBy('course_certification_mappings.certification_area_description', 'asc');
     
     if (search && search !== '*') {
-      query = query.where('course_certification_mappings.certification_area_description', 'ilike', `%${search}%`);
+      certificationQuery.where('course_certification_mappings.certification_area_description', 'ilike', `%${search}%`);
     }
     
-    // Get all data first (for distinct count), then paginate manually
-    const allData = await query;
-    const total = allData.length;
+    // Get all certifications with counts
+    const allCertifications = await certificationQuery;
+    const total = allCertifications.length;
     
-    // Apply pagination manually
-    const paginatedData = allData.slice(offset, offset + Number(limit));
+    // Apply pagination
+    const paginatedData = allCertifications.slice(offset, offset + Number(limit));
     
-    // Calculate CTE course count for each certification
-    const dataWithCounts = await Promise.all(paginatedData.map(async (item) => {
-      const courseCount = await db('course_certification_mappings')
-        .join('sced_course_details', 'course_certification_mappings.course_code', 'sced_course_details.course_code')
-        .where('course_certification_mappings.certification_area_description', item.name)
-        .andWhere('sced_course_details.cte_indicator', 'Yes')
-        .count('* as count')
-        .first();
-      
-      return {
-        ...item,
-        course_count: String(courseCount?.count || 0)
-      };
+    // Format the data
+    const formattedData = paginatedData.map(item => ({
+      code: item.code,
+      name: item.name,
+      course_count: String(item.course_count)
     }));
     
     res.json({
       success: true,
-      data: dataWithCounts,
+      data: formattedData,
       total: total,
       page: Number(page),
       limit: Number(limit)
