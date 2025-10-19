@@ -82,12 +82,16 @@ app.get('/api/v1/sced/search', async (req, res) => {
     const { search = '', page = 1, limit = 20 } = req.query;
     const offset = (Number(page) - 1) * Number(limit);
     
-    let query = db('sced_course_details').select('course_code', 'course_code_description', 'course_description', 'course_subject_area', 'course_level', 'cte_indicator');
+    let query = db('sced_course_details')
+      .select('course_code', 'course_code_description', 'course_description', 'course_subject_area', 'course_level', 'cte_indicator')
+      .where('cte_indicator', 'Yes'); // Only show CTE courses
     
     if (search) {
-      query = query.where('course_code_description', 'ilike', `%${search}%`)
-                   .orWhere('course_description', 'ilike', `%${search}%`)
-                   .orWhere('course_code', 'ilike', `%${search}%`);
+      query = query.andWhere(function() {
+        this.where('course_code_description', 'ilike', `%${search}%`)
+            .orWhere('course_description', 'ilike', `%${search}%`)
+            .orWhere('course_code', 'ilike', `%${search}%`);
+      });
     }
     
     const data = await query.limit(Number(limit)).offset(offset);
@@ -201,12 +205,13 @@ app.get('/api/v1/sced/courses/code/:code', async (req, res) => {
     const course = await db('sced_course_details')
       .select('*')
       .where('course_code', code)
+      .andWhere('cte_indicator', 'Yes') // Only show CTE courses
       .first();
     
     if (!course) {
       return res.status(404).json({
         success: false,
-        error: { message: 'Course not found' }
+        error: { message: 'CTE course not found' }
       });
     }
     
@@ -363,8 +368,11 @@ app.post('/api/v1/admin/upload-csv', upload.single('file'), async (req, res) => 
 // Database stats endpoint
 app.get('/api/v1/admin/stats', async (req, res) => {
   try {
-    // Get course count
-    const courseResult = await db('sced_course_details').count('* as count').first();
+    // Get CTE course count only
+    const courseResult = await db('sced_course_details')
+      .where('cte_indicator', 'Yes')
+      .count('* as count')
+      .first();
     const totalCourses = Number(courseResult?.count || 0);
     
     // Get mapping count
