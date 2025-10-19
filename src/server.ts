@@ -295,7 +295,7 @@ app.post('/api/v1/admin/upload-csv', upload.single('file'), async (req, res) => 
               recordsProcessed++;
             }
           } catch (insertError) {
-            console.warn('Insert error for mapping:', insertError.message);
+            console.warn('Insert error for mapping:', insertError instanceof Error ? insertError.message : 'Unknown error');
           }
         }
       }
@@ -330,7 +330,7 @@ app.post('/api/v1/admin/upload-csv', upload.single('file'), async (req, res) => 
               recordsProcessed++;
             }
           } catch (insertError) {
-            console.warn('Insert error for course:', insertError.message);
+            console.warn('Insert error for course:', insertError instanceof Error ? insertError.message : 'Unknown error');
           }
         }
       }
@@ -428,7 +428,7 @@ app.post('/api/v1/setup', async (req, res) => {
       `);
     } catch (constraintError) {
       // Constraint might already exist, ignore error
-      console.log('Constraint may already exist:', constraintError.message);
+      console.log('Constraint may already exist:', constraintError instanceof Error ? constraintError.message : 'Unknown error');
     }
 
     // Insert sample data (only if tables are empty)
