@@ -368,7 +368,7 @@ app.get('/api/v1/admin/stats', async (req, res) => {
     console.error('Stats endpoint error:', error);
     res.status(500).json({
       success: false,
-      error: { message: `Failed to load database stats: ${error.message}` }
+      error: { message: `Failed to load database stats: ${error instanceof Error ? error.message : 'Unknown error'}` }
     });
   }
 });
