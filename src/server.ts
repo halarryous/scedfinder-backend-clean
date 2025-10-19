@@ -277,12 +277,26 @@ app.post('/api/v1/admin/upload-csv', upload.single('file'), async (req, res) => 
         const certAreaDesc = row['Certification Area Description'] || row['certification_area_description'];
         
         if (courseCode && certAreaCode && certAreaDesc) {
-          await db.raw(`
-            INSERT INTO course_certification_mappings (course_code, certification_area_code, certification_area_description)
-            VALUES (?, ?, ?)
-            ON CONFLICT (course_code, certification_area_code) DO NOTHING
-          `, [courseCode, certAreaCode, certAreaDesc]);
-          recordsProcessed++;
+          try {
+            // Check if this mapping already exists
+            const existing = await db('course_certification_mappings')
+              .where({
+                course_code: courseCode,
+                certification_area_code: certAreaCode
+              })
+              .first();
+            
+            if (!existing) {
+              await db('course_certification_mappings').insert({
+                course_code: courseCode,
+                certification_area_code: certAreaCode,
+                certification_area_description: certAreaDesc
+              });
+              recordsProcessed++;
+            }
+          } catch (insertError) {
+            console.warn('Insert error for mapping:', insertError.message);
+          }
         }
       }
     } else {
@@ -393,10 +407,21 @@ app.post('/api/v1/setup', async (req, res) => {
         id SERIAL PRIMARY KEY,
         course_code VARCHAR(20),
         certification_area_code VARCHAR(20),
-        certification_area_description VARCHAR(500),
-        UNIQUE(course_code, certification_area_code)
+        certification_area_description VARCHAR(500)
       );
     `);
+
+    // Add unique constraint if it doesn't exist
+    try {
+      await db.raw(`
+        ALTER TABLE course_certification_mappings 
+        ADD CONSTRAINT unique_course_cert 
+        UNIQUE (course_code, certification_area_code)
+      `);
+    } catch (constraintError) {
+      // Constraint might already exist, ignore error
+      console.log('Constraint may already exist:', constraintError.message);
+    }
 
     // Insert sample data (only if tables are empty)
     const existingCourses = await db('sced_course_details').count('* as count').first();
