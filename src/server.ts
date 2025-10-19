@@ -23,7 +23,7 @@ const limiter = rateLimit({
 app.use(helmet());
 app.use(cors({
   origin: process.env.NODE_ENV === 'production' 
-    ? process.env.CORS_ORIGINS?.split(',') || ['https://your-frontend.vercel.app']
+    ? process.env.CORS_ORIGINS?.split(',') || ['https://scedfinder-frontend-clean.vercel.app']
     : ['http://localhost:3000'],
   credentials: true,
 }));
