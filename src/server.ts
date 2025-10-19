@@ -123,19 +123,26 @@ app.get('/api/v1/certifications/search', async (req, res) => {
     const { search = '', page = 1, limit = 20 } = req.query;
     const offset = (Number(page) - 1) * Number(limit);
     
+    // Get certifications that have CTE courses only
     let query = db('course_certification_mappings')
-      .select('certification_area_code as code', 'certification_area_description as name')
-      .distinct();
+      .join('sced_course_details', 'course_certification_mappings.course_code', 'sced_course_details.course_code')
+      .select('course_certification_mappings.certification_area_code as code', 'course_certification_mappings.certification_area_description as name')
+      .where('sced_course_details.cte_indicator', 'Yes')
+      .distinct()
+      .orderBy('course_certification_mappings.certification_area_description', 'asc'); // Alphabetical order
     
     if (search && search !== '*') {
-      query = query.where('certification_area_description', 'ilike', `%${search}%`);
+      query = query.where('course_certification_mappings.certification_area_description', 'ilike', `%${search}%`);
     }
     
-    const data = await query.limit(Number(limit)).offset(offset);
-    const total = await query.clone().clearSelect().clearOrder().count('* as count').first();
+    const allData = await query;
+    const total = allData.length;
+    
+    // Apply pagination manually since we need to calculate counts
+    const paginatedData = allData.slice(offset, offset + Number(limit));
     
     // Calculate CTE course count for each certification
-    const dataWithCounts = await Promise.all(data.map(async (item) => {
+    const dataWithCounts = await Promise.all(paginatedData.map(async (item) => {
       const courseCount = await db('course_certification_mappings')
         .join('sced_course_details', 'course_certification_mappings.course_code', 'sced_course_details.course_code')
         .where('course_certification_mappings.certification_area_description', item.name)
@@ -152,7 +159,7 @@ app.get('/api/v1/certifications/search', async (req, res) => {
     res.json({
       success: true,
       data: dataWithCounts,
-      total: Number(total?.count || 0),
+      total: total,
       page: Number(page),
       limit: Number(limit)
     });
