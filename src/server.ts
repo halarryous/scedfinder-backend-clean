@@ -134,12 +134,24 @@ app.get('/api/v1/certifications/search', async (req, res) => {
     const data = await query.limit(Number(limit)).offset(offset);
     const total = await query.clone().clearSelect().clearOrder().count('* as count').first();
     
+    // Calculate CTE course count for each certification
+    const dataWithCounts = await Promise.all(data.map(async (item) => {
+      const courseCount = await db('course_certification_mappings')
+        .join('sced_course_details', 'course_certification_mappings.course_code', 'sced_course_details.course_code')
+        .where('course_certification_mappings.certification_area_description', item.name)
+        .andWhere('sced_course_details.cte_indicator', 'Yes')
+        .count('* as count')
+        .first();
+      
+      return {
+        ...item,
+        course_count: String(courseCount?.count || 0)
+      };
+    }));
+    
     res.json({
       success: true,
-      data: data.map(item => ({
-        ...item,
-        course_count: '0' // Placeholder
-      })),
+      data: dataWithCounts,
       total: Number(total?.count || 0),
       page: Number(page),
       limit: Number(limit)
