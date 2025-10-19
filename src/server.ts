@@ -129,6 +129,89 @@ app.get('/api/v1/certifications/search', async (req, res) => {
   }
 });
 
+// Get CTE courses for a specific certification
+app.get('/api/v1/certifications/name/:name/cte-courses', async (req, res) => {
+  try {
+    const { name } = req.params;
+    const { page = 1, limit = 20 } = req.query;
+    const offset = (Number(page) - 1) * Number(limit);
+    
+    // Find courses related to this certification
+    let query = db('course_certification_mappings')
+      .join('sced_course_details', 'course_certification_mappings.course_code', 'sced_course_details.course_code')
+      .select(
+        'sced_course_details.course_code',
+        'sced_course_details.course_code_description',
+        'sced_course_details.course_description',
+        'sced_course_details.course_subject_area',
+        'sced_course_details.course_level',
+        'sced_course_details.cte_indicator'
+      )
+      .where('course_certification_mappings.certification_area_description', decodeURIComponent(name))
+      .andWhere('sced_course_details.cte_indicator', 'Yes');
+    
+    const data = await query.limit(Number(limit)).offset(offset);
+    const total = await query.clone().clearSelect().clearOrder().count('* as count').first();
+    
+    res.json({
+      success: true,
+      data: data.map(course => ({
+        id: course.course_code,
+        ...course
+      })),
+      pagination: {
+        page: Number(page),
+        limit: Number(limit),
+        total: Number(total?.count || 0),
+        totalPages: Math.ceil(Number(total?.count || 0) / Number(limit))
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: { message: 'Failed to load CTE courses for certification' }
+    });
+  }
+});
+
+// Get course details by course code
+app.get('/api/v1/sced/courses/code/:code', async (req, res) => {
+  try {
+    const { code } = req.params;
+    
+    const course = await db('sced_course_details')
+      .select('*')
+      .where('course_code', code)
+      .first();
+    
+    if (!course) {
+      return res.status(404).json({
+        success: false,
+        error: { message: 'Course not found' }
+      });
+    }
+    
+    // Get related certifications
+    const certifications = await db('course_certification_mappings')
+      .select('certification_area_code', 'certification_area_description')
+      .where('course_code', code);
+    
+    res.json({
+      success: true,
+      data: {
+        id: course.course_code,
+        ...course,
+        certifications: certifications.map(cert => cert.certification_area_description)
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: { message: 'Failed to load course details' }
+    });
+  }
+});
+
 // Database setup endpoint (for initial setup)
 app.post('/api/v1/setup', async (req, res) => {
   try {
