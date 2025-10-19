@@ -344,11 +344,13 @@ app.post('/api/v1/admin/upload-csv', upload.single('file'), async (req, res) => 
 // Database stats endpoint
 app.get('/api/v1/admin/stats', async (req, res) => {
   try {
-    const [courseCount, certCount, mappingCount] = await Promise.all([
-      db('sced_course_details').count('* as count').first(),
-      db('course_certification_mappings').select('certification_area_description').distinct().count('* as count').first(),
-      db('course_certification_mappings').count('* as count').first()
-    ]);
+    const courseCount = await db('sced_course_details').count('* as count').first();
+    const mappingCount = await db('course_certification_mappings').count('* as count').first();
+    
+    // Get distinct certifications count
+    const certCount = await db('course_certification_mappings')
+      .countDistinct('certification_area_description as count')
+      .first();
 
     res.json({
       success: true,
@@ -359,6 +361,7 @@ app.get('/api/v1/admin/stats', async (req, res) => {
       }
     });
   } catch (error) {
+    console.error('Stats endpoint error:', error);
     res.status(500).json({
       success: false,
       error: { message: 'Failed to load database stats' }
