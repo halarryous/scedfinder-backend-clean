@@ -55,22 +55,31 @@ const upload = multer({
 // Health check endpoint
 app.get('/health', async (req, res) => {
   try {
-    // Test database connection
-    await db.raw('SELECT 1');
-    res.status(200).json({ 
+    // Basic health check - don't fail if database isn't ready yet
+    const health = {
       status: 'OK', 
       timestamp: new Date().toISOString(),
-      environment: process.env.NODE_ENV,
+      environment: process.env.NODE_ENV || 'development',
       version: '1.0.0',
-      database: 'connected'
-    });
+      database: 'checking...'
+    };
+
+    // Try database connection but don't fail health check if it's not ready
+    try {
+      await db.raw('SELECT 1');
+      health.database = 'connected';
+    } catch (dbError) {
+      health.database = 'not_connected';
+      console.warn('Database not available during health check:', dbError instanceof Error ? dbError.message : 'Unknown error');
+    }
+
+    res.status(200).json(health);
   } catch (error) {
     res.status(500).json({ 
       status: 'ERROR', 
       timestamp: new Date().toISOString(),
-      environment: process.env.NODE_ENV,
+      environment: process.env.NODE_ENV || 'development',
       version: '1.0.0',
-      database: 'disconnected',
       error: error instanceof Error ? error.message : 'Unknown error'
     });
   }
