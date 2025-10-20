@@ -79,7 +79,7 @@ app.get('/health', async (req, res) => {
 // API Routes
 app.get('/api/v1/sced/search', async (req, res) => {
   try {
-    const { search = '', page = 1, limit = 20 } = req.query;
+    const { query: search = '', page = 1, limit = 20 } = req.query;
     const offset = (Number(page) - 1) * Number(limit);
     
     let query = db('sced_course_details')
@@ -120,7 +120,7 @@ app.get('/api/v1/sced/search', async (req, res) => {
 
 app.get('/api/v1/certifications/search', async (req, res) => {
   try {
-    const { search = '', page = 1, limit = 20 } = req.query;
+    const { query: search = '', page = 1, limit = 20 } = req.query;
     const offset = (Number(page) - 1) * Number(limit);
     
     // First, get all unique CTE certifications with their course counts
